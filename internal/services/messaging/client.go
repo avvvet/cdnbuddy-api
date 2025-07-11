@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/avvvet/cdnbuddy-api/internal/models"
 )
 
 // Client provides high-level messaging operations
@@ -55,6 +57,28 @@ func (c *Client) RequestCDNStatus(ctx context.Context, userID, sessionID string)
 	var response StatusResponse
 	if err := json.Unmarshal(msg.Data, &response); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// RequestIntentAnalysis sends a chat message to the intent service for analysis
+func (c *Client) RequestIntentAnalysis(ctx context.Context, sessionID, userMessage string) (*models.IntentResponse, error) {
+	request := models.IntentRequest{
+		SessionID:           sessionID,
+		UserMessage:         userMessage,
+		ConversationHistory: []models.ConversationMessage{}, // Empty for now
+		AvailableActions:    []models.ActionSchema{},        // Empty for now
+	}
+
+	msg, err := c.nats.Request("intent.analyze", request, 30*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("failed to request intent analysis: %w", err)
+	}
+
+	var response models.IntentResponse
+	if err := json.Unmarshal(msg.Data, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal intent response: %w", err)
 	}
 
 	return &response, nil

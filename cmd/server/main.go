@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/avvvet/cdnbuddy-api/internal/config"
+	"github.com/avvvet/cdnbuddy-api/internal/models"
 	"github.com/avvvet/cdnbuddy-api/internal/services/messaging"
 )
 
@@ -262,19 +262,78 @@ func setupEventHandlers(msgClient *messaging.Client) {
 
 	// Handle chat messages from socket service (will forward to AI Intent Service)
 	err = subscriber.RegisterChatHandler(func(event messaging.ChatEvent) error {
-		fmt.Println("----------------------------------------")
 		logrus.WithFields(logrus.Fields{
 			"user_id":    event.UserID,
 			"session_id": event.SessionID,
 		}).Info("💬 Chat message received")
 
-		// TODO: Forward to AI Intent Service for processing
-		// For now, echo back a simple response
+		// Request intent analysis
+		intentResponse, err := msgClient.RequestIntentAnalysis(
+			context.Background(),
+			event.SessionID,
+			event.Message,
+		)
+		if err != nil {
+			logrus.WithError(err).Error("❌ Failed to get response from intent service")
+
+			// Send fallback message to user
+			return msgClient.SendAIResponse(
+				context.Background(),
+				event.UserID,
+				event.SessionID,
+				"I'm sorry, I'm having trouble processing your request right now. Please try again.",
+			)
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"session_id": event.SessionID,
+			"status":     intentResponse.Status,
+			"action":     intentResponse.Action,
+		}).Info("📥 Received response from intent service")
+
+		// Step 3: Handle the response based on status
+		var responseMessage string
+
+		switch intentResponse.Status {
+		case "ERROR":
+			// Handle error response
+			if intentResponse.ErrorMessage != nil {
+				logrus.WithFields(logrus.Fields{
+					"session_id": event.SessionID,
+					"error_code": intentResponse.ErrorCode,
+					"error_msg":  *intentResponse.ErrorMessage,
+				}).Error("❌ Intent service returned error")
+			}
+			responseMessage = intentResponse.UserMessage // This should be a user-friendly error message
+
+		case "NEEDS_INFO", "READY":
+			// Handle successful response
+			responseMessage = intentResponse.UserMessage
+
+			// Log action and parameters for debugging
+			if intentResponse.Action != nil {
+				logrus.WithFields(logrus.Fields{
+					"session_id": event.SessionID,
+					"action":     *intentResponse.Action,
+					"parameters": intentResponse.Parameters,
+				}).Info("🎯 Intent identified")
+			}
+
+		default:
+			// Handle unknown status
+			logrus.WithFields(logrus.Fields{
+				"session_id": event.SessionID,
+				"status":     intentResponse.Status,
+			}).Warn("⚠️ Unknown intent response status")
+			responseMessage = intentResponse.UserMessage
+		}
+
+		// Send the response back to the user
 		return msgClient.SendAIResponse(
 			context.Background(),
 			event.UserID,
 			event.SessionID,
-			"***I received your message: "+event.Message+". AI Intent Service integration coming soon!",
+			responseMessage,
 		)
 	})
 
@@ -426,4 +485,13 @@ func setupEventHandlers(msgClient *messaging.Client) {
 	}
 
 	logrus.Info("✅ Event handlers configured for AI Intent Service integration")
+}
+
+func createIntentRequest(event messaging.ChatEvent) models.IntentRequest {
+	return models.IntentRequest{
+		SessionID:           event.SessionID,
+		UserMessage:         event.Message,
+		ConversationHistory: []models.ConversationMessage{}, // Empty for now
+		AvailableActions:    []models.ActionSchema{},        // Empty for now
+	}
 }
