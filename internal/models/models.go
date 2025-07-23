@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // NATS Request from backend
 type IntentRequest struct {
 	SessionID           string                `json:"session_id"`
@@ -9,8 +11,9 @@ type IntentRequest struct {
 }
 
 type ConversationMessage struct {
-	Role    string `json:"role"` // "user" or "assistant"
-	Message string `json:"message"`
+	Role      string    `json:"role"` // "user" or "assistant"
+	Message   string    `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type ActionSchema struct {

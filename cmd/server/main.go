@@ -304,20 +304,47 @@ func setupEventHandlers(msgClient *messaging.Client) {
 					"error_msg":  *intentResponse.ErrorMessage,
 				}).Error("❌ Intent service returned error")
 			}
-			responseMessage = intentResponse.UserMessage // This should be a user-friendly error message
+			responseMessage = intentResponse.UserMessage
+			// Optional: Clear session on error to start fresh
+			// msgClient.clearSession(event.SessionID)
 
-		case "NEEDS_INFO", "READY":
-			// Handle successful response
+		case "NEEDS_INFO":
+			// LLM needs more information - continue conversation
 			responseMessage = intentResponse.UserMessage
 
-			// Log action and parameters for debugging
+			// Store LLM's clarifying question in session history
+			if intentResponse.UserMessage != "" {
+				msgClient.AppendToSession(event.SessionID, "assistant", intentResponse.UserMessage)
+			}
+
+			logrus.WithFields(logrus.Fields{
+				"session_id": event.SessionID,
+				"message":    intentResponse.UserMessage,
+			}).Info("🔍 Requesting more information from user")
+
+		case "READY":
+			// LLM has enough info to execute action
+			responseMessage = intentResponse.UserMessage
+
+			// Store LLM's response in session history
+			if intentResponse.UserMessage != "" {
+				msgClient.AppendToSession(event.SessionID, "assistant", intentResponse.UserMessage)
+			}
+
+			// Log the identified action
 			if intentResponse.Action != nil {
 				logrus.WithFields(logrus.Fields{
 					"session_id": event.SessionID,
 					"action":     *intentResponse.Action,
 					"parameters": intentResponse.Parameters,
-				}).Info("🎯 Intent identified")
+				}).Info("🎯 Ready to execute action")
 			}
+
+			// TODO: Here you would typically:
+			// 1. Execute the action (CDN configuration, etc.)
+			// 2. Send execution status/results to user
+			// 3. Clear session after successful execution
+			// For now, just send the response and keep session alive
 
 		default:
 			// Handle unknown status
