@@ -10,6 +10,7 @@ import (
 type CDNProvider interface {
 	// Basic operations
 	CreateService(ctx context.Context, config *ServiceConfig) (*domain.CDNService, error)
+	ListServices(ctx context.Context) ([]domain.CDNService, error)
 	UpdateService(ctx context.Context, serviceID string, config *ServiceConfig) error
 	DeleteService(ctx context.Context, serviceID string) error
 

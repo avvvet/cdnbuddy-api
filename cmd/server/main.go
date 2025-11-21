@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/avvvet/cdnbuddy-api/internal/config"
 	"github.com/avvvet/cdnbuddy-api/internal/models"
+	"github.com/avvvet/cdnbuddy-api/internal/services/cdn"
 	"github.com/avvvet/cdnbuddy-api/internal/services/messaging"
 )
 
@@ -30,6 +32,15 @@ func main() {
 	setupLogger(cfg.LogLevel, cfg.Environment)
 
 	logrus.Info("🚀 Starting CDNBuddy API Server...")
+
+	// Initialize CacheFly provider
+	cacheFlyProvider, err := cdn.NewCacheFlyProvider()
+	if err != nil {
+		logrus.Fatalf("Failed to initialize CacheFly provider: %v", err)
+	}
+
+	// Initialize CDN service
+	cdnService := cdn.NewService(cacheFlyProvider)
 
 	// Initialize database
 	/*
@@ -58,7 +69,7 @@ func main() {
 	publisher := msgClient.Publisher()
 
 	// Setup event handlers for AI Intent Service responses
-	setupEventHandlers(msgClient)
+	setupEventHandlers(msgClient, cdnService)
 
 	// Create Chi router
 	r := chi.NewRouter()
@@ -241,7 +252,7 @@ func setupRoutes(r chi.Router, publisher *messaging.Publisher) {
 }
 
 // setupEventHandlers configures NATS event subscribers for AI Intent Service integration
-func setupEventHandlers(msgClient *messaging.Client) {
+func setupEventHandlers(msgClient *messaging.Client, cdnService *cdn.Service) {
 	subscriber := msgClient.Subscriber()
 
 	// Handle AI Intent Service responses (execution plans)
@@ -312,11 +323,6 @@ func setupEventHandlers(msgClient *messaging.Client) {
 			// LLM needs more information - continue conversation
 			responseMessage = intentResponse.UserMessage
 
-			// Store LLM's clarifying question in session history
-			if intentResponse.UserMessage != "" {
-				msgClient.AppendToSession(event.SessionID, "assistant", intentResponse.UserMessage)
-			}
-
 			logrus.WithFields(logrus.Fields{
 				"session_id": event.SessionID,
 				"message":    intentResponse.UserMessage,
@@ -324,27 +330,24 @@ func setupEventHandlers(msgClient *messaging.Client) {
 
 		case "READY":
 			// LLM has enough info to execute action
-			responseMessage = intentResponse.UserMessage
-
-			// Store LLM's response in session history
-			if intentResponse.UserMessage != "" {
-				msgClient.AppendToSession(event.SessionID, "assistant", intentResponse.UserMessage)
-			}
-
-			// Log the identified action
 			if intentResponse.Action != nil {
 				logrus.WithFields(logrus.Fields{
 					"session_id": event.SessionID,
 					"action":     *intentResponse.Action,
 					"parameters": intentResponse.Parameters,
-				}).Info("🎯 Ready to execute action")
-			}
+				}).Info("🎯 Executing action")
 
-			// TODO: Here you would typically:
-			// 1. Execute the action (CDN configuration, etc.)
-			// 2. Send execution status/results to user
-			// 3. Clear session after successful execution
-			// For now, just send the response and keep session alive
+				// Execute CDN action
+				result, err := cdnService.ExecuteIntent(context.Background(), intentResponse)
+				if err != nil {
+					logrus.WithError(err).Error("❌ Failed to execute CDN action")
+					responseMessage = fmt.Sprintf("❌ Failed to complete action: %v", err)
+				} else {
+					responseMessage = result
+				}
+			} else {
+				responseMessage = intentResponse.UserMessage
+			}
 
 		default:
 			// Handle unknown status
