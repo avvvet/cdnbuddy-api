@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/avvvet/cdnbuddy-api/internal/domain"
 	"github.com/avvvet/cdnbuddy-api/internal/models"
 )
 
@@ -16,6 +17,11 @@ func NewService(provider CDNProvider) *Service {
 	return &Service{
 		provider: provider,
 	}
+}
+
+// ListServices returns all CDN services (exposed for API handlers)
+func (s *Service) ListServices(ctx context.Context) ([]domain.CDNService, error) {
+	return s.provider.ListServices(ctx)
 }
 
 // ExecuteIntent handles intent responses and executes CDN operations

@@ -238,6 +238,18 @@ func (p *Publisher) PublishExecutionPlan(userID, sessionID string, plan interfac
 	return p.client.Publish(SubjectExecutionPlan, event)
 }
 
+// PublishStatusResponse sends CDN status back to Socket Server
+func (p *Publisher) PublishStatusResponse(userID, sessionID string, services []ServiceStatus) error {
+	event := StatusResponseEvent{
+		UserID:    userID,
+		SessionID: sessionID,
+		Services:  services,
+		Timestamp: time.Now(),
+	}
+
+	return p.client.Publish(SubjectStatusResponse, event)
+}
+
 // Helper functions to extract IDs from operation params
 func getServiceIDFromOperation(op *domain.CDNOperation) string {
 	if serviceID, ok := op.Params["service_id"].(string); ok {

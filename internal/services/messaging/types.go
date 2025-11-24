@@ -30,11 +30,23 @@ type Metrics struct {
 	TotalRequests   string `json:"total_requests"`
 }
 
-// Execution Plan types
+// // Execution Plan types
+// type ExecutionPlan struct {
+// 	ID    string     `json:"id"`
+// 	Title string     `json:"title"`
+// 	Steps []PlanStep `json:"steps"`
+// }
+
+// ExecutionPlan represents a pending execution plan
 type ExecutionPlan struct {
-	ID    string     `json:"id"`
-	Title string     `json:"title"`
-	Steps []PlanStep `json:"steps"`
+	ID                string                 `json:"id"`
+	Title             string                 `json:"title"`
+	Description       string                 `json:"description"`
+	Steps             []string               `json:"steps"`
+	EstimatedDuration string                 `json:"estimated_duration"`
+	Parameters        map[string]interface{} `json:"parameters"`
+	CreatedAt         time.Time              `json:"created_at"`
+	ExpiresAt         time.Time              `json:"expires_at"`
 }
 
 type PlanStep struct {

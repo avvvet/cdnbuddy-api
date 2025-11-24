@@ -106,6 +106,19 @@ func (s *Subscriber) RegisterExecutionPlanHandler(handler func(event ExecutionPl
 	return s.subscribe(SubjectExecutionPlan, messageHandler)
 }
 
+// RegisterStatusRequestHandler registers handler for CDN status requests
+func (s *Subscriber) RegisterStatusRequestHandler(handler func(event StatusRequestEvent) error) error {
+	messageHandler := func(data []byte) error {
+		var event StatusRequestEvent
+		if err := json.Unmarshal(data, &event); err != nil {
+			return err
+		}
+		return handler(event)
+	}
+
+	return s.subscribe("cdn.status.request", messageHandler)
+}
+
 // Generic subscription method
 func (s *Subscriber) subscribe(subject string, handler MessageHandler) error {
 	// Add handler to registry

@@ -17,6 +17,7 @@ const (
 
 	SubjectChatResponse = "cdnbuddy.chat.response" // For AI responses
 	SubjectNotification = "cdnbuddy.notification"  // For notifications
+
 )
 
 // Event Types
@@ -127,4 +128,28 @@ type ExecutionPlanEvent struct {
 	SessionID string      `json:"session_id"`
 	Plan      interface{} `json:"plan"`
 	Timestamp time.Time   `json:"timestamp"`
+}
+
+// StatusRequestEvent is received from Socket Server
+type StatusRequestEvent struct {
+	UserID    string    `json:"user_id"`
+	SessionID string    `json:"session_id"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// StatusResponseEvent is sent back to Socket Server
+type StatusResponseEvent struct {
+	UserID    string          `json:"user_id"`
+	SessionID string          `json:"session_id"`
+	Services  []ServiceStatus `json:"services"`
+	Timestamp time.Time       `json:"timestamp"`
+}
+
+// ServiceStatus represents a CDN service status
+type ServiceStatus struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	TestURL  string `json:"test_url"`
+	Provider string `json:"provider"`
 }

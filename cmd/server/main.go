@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -512,6 +513,52 @@ func setupEventHandlers(msgClient *messaging.Client, cdnService *cdn.Service) {
 	})
 	if err != nil {
 		logrus.WithError(err).Error("Failed to register cache handler")
+	}
+
+	// Handle CDN status requests from Socket Server
+	err = subscriber.RegisterStatusRequestHandler(func(event messaging.StatusRequestEvent) error {
+		logrus.WithFields(logrus.Fields{
+			"user_id":    event.UserID,
+			"session_id": event.SessionID,
+		}).Info("📡 CDN status request received")
+
+		// Fetch real services from CacheFly
+		ctx := context.Background()
+		services, err := cdnService.ListServices(ctx)
+		if err != nil {
+			logrus.WithError(err).Error("❌ Failed to fetch CDN services")
+			// Send empty response on error
+			return msgClient.Publisher().PublishStatusResponse(event.UserID, event.SessionID, []messaging.ServiceStatus{})
+		}
+
+		// Convert to response format
+		statusServices := make([]messaging.ServiceStatus, 0, len(services))
+		for _, svc := range services {
+			// Parse config JSON to get test URL
+			var config map[string]interface{}
+			json.Unmarshal([]byte(svc.Config), &config)
+
+			testURL := ""
+			if url, ok := config["test_url"].(string); ok {
+				testURL = url
+			}
+
+			statusServices = append(statusServices, messaging.ServiceStatus{
+				ID:       svc.ID,
+				Name:     svc.Name,
+				Status:   svc.Status,
+				TestURL:  testURL,
+				Provider: string(svc.Provider),
+			})
+		}
+
+		logrus.WithField("count", len(statusServices)).Info("✅ Sending CDN status response")
+
+		// Send response back to Socket Server
+		return msgClient.Publisher().PublishStatusResponse(event.UserID, event.SessionID, statusServices)
+	})
+	if err != nil {
+		logrus.WithError(err).Error("Failed to register status request handler")
 	}
 
 	logrus.Info("✅ Event handlers configured for AI Intent Service integration")
