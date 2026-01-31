@@ -75,7 +75,7 @@ func (p *CacheFlyProvider) CreateService(ctx context.Context, config *ServiceCon
 	return cdnService, nil
 }
 
-// configureServiceOptions configures origin and performance settings
+// configureServiceOptions configures origin and performance settings with best practices
 func (p *CacheFlyProvider) configureServiceOptions(ctx context.Context, serviceID string, config *ServiceConfig) error {
 	// Determine origin scheme
 	originScheme := "HTTPS"
@@ -83,45 +83,10 @@ func (p *CacheFlyProvider) configureServiceOptions(ctx context.Context, serviceI
 		originScheme = strings.ToUpper(config.Origin.Protocol)
 	}
 
-	// Build service options with origin configuration
-	options := api.ServiceOptions{
-		// Origin configuration via reverseProxy
-		"reverseProxy": map[string]interface{}{
-			"enabled":           true,
-			"mode":              "WEB",
-			"hostname":          config.Origin.Host,
-			"originScheme":      originScheme,
-			"ttl":               86400, // 24 hours default
-			"cacheByQueryParam": false,
-			"useRobotsTxt":      true,
-		},
+	// Get best practices configuration with origin details
+	options := GetBestPracticesOptions(config.Name, config.Origin.Host, originScheme)
 
-		// Performance best practices
-		"brotli_support":       true,
-		"servestale":           true,
-		"normalizequerystring": true,
-		"send-xff":             true,
-		"allowretry":           true,
-
-		// Timeouts
-		"contimeout": map[string]interface{}{
-			"enabled": true,
-			"value":   10,
-		},
-		"ttfb_timeout": map[string]interface{}{
-			"enabled": true,
-			"value":   30,
-		},
-		"error_ttl": map[string]interface{}{
-			"enabled": true,
-			"value":   300,
-		},
-
-		// CORS for web applications
-		"cors": true,
-	}
-
-	// Add cache rules if provided
+	// Add custom cache rules if provided (override defaults)
 	if len(config.Rules) > 0 {
 		options["expiryHeaders"] = p.buildExpiryHeaders(config.Rules)
 	}

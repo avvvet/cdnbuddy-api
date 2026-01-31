@@ -121,15 +121,6 @@ type ChatEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// Execution Plan Events
-type ExecutionPlanEvent struct {
-	Type      string      `json:"type"`
-	UserID    string      `json:"user_id"`
-	SessionID string      `json:"session_id"`
-	Plan      interface{} `json:"plan"`
-	Timestamp time.Time   `json:"timestamp"`
-}
-
 // StatusRequestEvent is received from Socket Server
 type StatusRequestEvent struct {
 	UserID    string    `json:"user_id"`

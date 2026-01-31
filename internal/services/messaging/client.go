@@ -88,8 +88,8 @@ func (c *Client) RequestIntentAnalysis(ctx context.Context, sessionID, userMessa
 }
 
 // Send execution plan to socket service
-func (c *Client) SendExecutionPlan(ctx context.Context, userID, sessionID string, plan interface{}) error {
-	return c.publisher.PublishExecutionPlan(userID, sessionID, plan)
+func (c *Client) SendExecutionPlan(ctx context.Context, event ExecutionPlanEvent) error {
+	return c.publisher.PublishExecutionPlan(ctx, event)
 }
 
 // Send AI response to socket service

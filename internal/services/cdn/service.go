@@ -46,12 +46,11 @@ func (s *Service) handleSetupCDN(ctx context.Context, params map[string]*string)
 	// Extract parameters
 	domain := getParam(params, "domain")
 	origin := getParam(params, "origin_hostname")
-
 	if domain == "" || origin == "" {
 		return "", fmt.Errorf("missing required parameters")
 	}
 
-	// Step 1: Create service
+	// Step 1: Create service (this now automatically applies best practices)
 	config := &ServiceConfig{
 		Name: domain,
 		Origin: OriginConfig{
@@ -78,29 +77,45 @@ func (s *Service) handleSetupCDN(ctx context.Context, params map[string]*string)
 	var configData map[string]interface{}
 	json.Unmarshal([]byte(service.Config), &configData)
 	testURL := configData["test_url"].(string)
+	uniqueName := configData["unique_name"].(string)
 
-	// Build response message
-	response := fmt.Sprintf(`✅ CDN configured successfully!
+	// ============================================
+	// Build enhanced response with optimizations
+	// ============================================
+	optimizations := GetOptimizationsSummary()
+	optimizationCount := GetOptimizationsCount()
+
+	response := fmt.Sprintf(`✅ CDN configured successfully with %d optimizations!
 
 🧪 Test URL: %s
 🌐 Domain: %s (Status: Waiting for DNS)
 📡 Origin: %s
 
-📌 To activate your domain:
-1. Update DNS:
-   Type: CNAME
-   Name: %s
-   Value: %s
-   TTL: 300
+🚀 Applied Optimizations:
+   • %s
+   • %s
+   • %s
+   • %s
+   • %s
+   • ...and %d more optimizations
 
-2. Wait 5-10 minutes for DNS propagation
+📌 To activate your domain:
+   1. Update DNS: Type: CNAME, Name: %s, Value: %s.cachefly.net, TTL: 300
+   2. Wait 5-10 minutes for DNS propagation
 
 Your CDN is ready to test now!`,
+		optimizationCount,
 		testURL,
 		domain,
 		origin,
+		optimizations[0],
+		optimizations[1],
+		optimizations[2],
+		optimizations[3],
+		optimizations[4],
+		optimizationCount-5,
 		domain,
-		configData["unique_name"].(string)+".cachefly.net",
+		uniqueName,
 	)
 
 	return response, nil

@@ -20,6 +20,7 @@ import (
 	"github.com/avvvet/cdnbuddy-api/internal/models"
 	"github.com/avvvet/cdnbuddy-api/internal/services/cdn"
 	"github.com/avvvet/cdnbuddy-api/internal/services/messaging"
+	"github.com/avvvet/cdnbuddy-api/internal/services/planstorage"
 )
 
 func main() {
@@ -42,6 +43,9 @@ func main() {
 
 	// Initialize CDN service
 	cdnService := cdn.NewService(cacheFlyProvider)
+
+	// Initialize plan storage
+	planStorage := planstorage.NewStorage()
 
 	// Initialize database
 	/*
@@ -70,7 +74,7 @@ func main() {
 	publisher := msgClient.Publisher()
 
 	// Setup event handlers for AI Intent Service responses
-	setupEventHandlers(msgClient, cdnService)
+	setupEventHandlers(msgClient, cdnService, planStorage)
 
 	// Create Chi router
 	r := chi.NewRouter()
@@ -253,7 +257,7 @@ func setupRoutes(r chi.Router, publisher *messaging.Publisher) {
 }
 
 // setupEventHandlers configures NATS event subscribers for AI Intent Service integration
-func setupEventHandlers(msgClient *messaging.Client, cdnService *cdn.Service) {
+func setupEventHandlers(msgClient *messaging.Client, cdnService *cdn.Service, planStorage *planstorage.Storage) {
 	subscriber := msgClient.Subscriber()
 
 	// Handle AI Intent Service responses (execution plans)
@@ -330,26 +334,54 @@ func setupEventHandlers(msgClient *messaging.Client, cdnService *cdn.Service) {
 			}).Info("🔍 Requesting more information from user")
 
 		case "READY":
-			// LLM has enough info to execute action
+			// LLM has enough info - create execution plan (DON'T execute yet)
 			if intentResponse.Action != nil {
 				logrus.WithFields(logrus.Fields{
 					"session_id": event.SessionID,
 					"action":     *intentResponse.Action,
 					"parameters": intentResponse.Parameters,
-				}).Info("🎯 Executing action")
+				}).Info("✅ Intent ready - building execution plan")
 
-				// Execute CDN action
-				result, err := cdnService.ExecuteIntent(context.Background(), intentResponse)
-				if err != nil {
-					logrus.WithError(err).Error("❌ Failed to execute CDN action")
-					responseMessage = fmt.Sprintf("❌ Failed to complete action: %v", err)
+				// Build execution plan from intent response
+				plan := models.BuildExecutionPlan(intentResponse)
+
+				// Store plan for later execution
+				if err := planStorage.Store(plan); err != nil {
+					logrus.WithError(err).Error("❌ Failed to store execution plan")
+					responseMessage = "Sorry, I couldn't prepare the execution plan. Please try again."
 				} else {
-					responseMessage = result
+					// Convert models.ExecutionPlan to messaging.ExecutionPlan
+					msgPlan := messaging.ExecutionPlan{
+						ID:                plan.ID,
+						Title:             plan.Title,
+						Description:       plan.Description,
+						Steps:             plan.Steps,
+						EstimatedDuration: plan.EstimatedDuration,
+						Action:            plan.Action,
+						Parameters:        plan.Parameters,
+						CreatedAt:         plan.CreatedAt,
+						ExpiresAt:         plan.ExpiresAt,
+					}
+
+					// Send execution plan to frontend
+					planEvent := messaging.ExecutionPlanEvent{
+						UserID:    event.UserID,
+						SessionID: event.SessionID,
+						Plan:      msgPlan,
+						Timestamp: time.Now(),
+					}
+
+					if err := msgClient.Publisher().PublishExecutionPlan(context.Background(), planEvent); err != nil {
+						logrus.WithError(err).Error("❌ Failed to send execution plan")
+						responseMessage = "Sorry, I couldn't send the execution plan. Please try again."
+					} else {
+						logrus.WithField("plan_id", plan.ID).Info("📋 Execution plan sent to user")
+						responseMessage = "✅ I'm ready to proceed. Please review the execution plan and click EXECUTE when ready."
+					}
 				}
 			} else {
 				responseMessage = intentResponse.UserMessage
 			}
-
 		default:
 			// Handle unknown status
 			logrus.WithFields(logrus.Fields{
@@ -561,14 +593,62 @@ func setupEventHandlers(msgClient *messaging.Client, cdnService *cdn.Service) {
 		logrus.WithError(err).Error("Failed to register status request handler")
 	}
 
-	logrus.Info("✅ Event handlers configured for AI Intent Service integration")
-}
+	// Subscribe to execution commands
+	err = subscriber.RegisterExecuteCommandHandler(func(cmd messaging.ExecuteCommand) error {
+		logrus.WithFields(logrus.Fields{
+			"user_id":    cmd.UserID,
+			"plan_id":    cmd.PlanID,
+			"session_id": cmd.SessionID,
+		}).Info("🚀 Execute command received")
 
-func createIntentRequest(event messaging.ChatEvent) models.IntentRequest {
-	return models.IntentRequest{
-		SessionID:           event.SessionID,
-		UserMessage:         event.Message,
-		ConversationHistory: []models.ConversationMessage{}, // Empty for now
-		AvailableActions:    []models.ActionSchema{},        // Empty for now
+		// Retrieve plan from storage
+		plan, err := planStorage.Get(cmd.PlanID)
+		if err != nil {
+			logrus.WithError(err).Error("❌ Failed to retrieve execution plan")
+			msgClient.Publisher().PublishAIResponse(cmd.UserID, cmd.SessionID, "Execution plan not found or expired. Please create a new plan.")
+			return err
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"plan_id": plan.ID,
+			"action":  plan.Action,
+		}).Info("📋 Retrieved execution plan from storage")
+
+		// Convert plan back to IntentResponse format for execution
+		intentResponse := plan.IntentResponse
+		if intentResponse == nil {
+			logrus.Error("❌ Intent response is nil in stored plan")
+			msgClient.Publisher().PublishAIResponse(cmd.UserID, cmd.SessionID, "Execution plan is invalid.")
+			return fmt.Errorf("intent response is nil")
+		}
+
+		// Execute the CDN operation
+		logrus.Info("🎯 Executing CDN operation")
+		result, err := cdnService.ExecuteIntent(context.Background(), intentResponse)
+		if err != nil {
+			logrus.WithError(err).Error("❌ Execution failed")
+			failureMsg := fmt.Sprintf("❌ Execution failed: %v", err)
+			msgClient.Publisher().PublishAIResponse(cmd.UserID, cmd.SessionID, failureMsg)
+			return err
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"result": result,
+		}).Info("✅ Execution completed successfully")
+
+		// Send success message
+		successMsg := fmt.Sprintf("✅ %s", result)
+		msgClient.Publisher().PublishAIResponse(cmd.UserID, cmd.SessionID, successMsg)
+
+		// Delete plan from storage after successful execution
+		planStorage.Delete(cmd.PlanID)
+		logrus.WithField("plan_id", cmd.PlanID).Info("🗑️ Deleted executed plan from storage")
+
+		return nil
+	})
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to subscribe to cdnbuddy.execute")
 	}
+
+	logrus.Info("✅ Event handlers configured for AI Intent Service integration")
 }

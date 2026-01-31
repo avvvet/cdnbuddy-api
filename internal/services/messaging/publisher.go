@@ -1,9 +1,11 @@
 package messaging
 
 import (
+	"context"
 	"time"
 
 	"github.com/avvvet/cdnbuddy-api/internal/domain"
+	"github.com/sirupsen/logrus"
 )
 
 type Publisher struct {
@@ -226,16 +228,16 @@ func (p *Publisher) PublishAIResponse(userID, sessionID, response string) error 
 	return p.client.Publish(SubjectChatResponse, event)
 }
 
-func (p *Publisher) PublishExecutionPlan(userID, sessionID string, plan interface{}) error {
-	event := ExecutionPlanEvent{
-		Type:      EventExecutionPlan,
-		UserID:    userID,
-		SessionID: sessionID,
-		Plan:      plan,
-		Timestamp: time.Now(),
-	}
+// Remove manual marshaling, let client.Publish handle it
+func (p *Publisher) PublishExecutionPlan(ctx context.Context, event ExecutionPlanEvent) error {
+	subject := "cdnbuddy.execution.plan"
+	logrus.WithFields(logrus.Fields{
+		"subject": subject,
+		"plan_id": event.Plan.ID,
+		"user_id": event.UserID,
+	}).Info("📤 Publishing execution plan")
 
-	return p.client.Publish(SubjectExecutionPlan, event)
+	return p.client.Publish(subject, event) // Pass event, not data
 }
 
 // PublishStatusResponse sends CDN status back to Socket Server

@@ -30,23 +30,33 @@ type Metrics struct {
 	TotalRequests   string `json:"total_requests"`
 }
 
-// // Execution Plan types
-// type ExecutionPlan struct {
-// 	ID    string     `json:"id"`
-// 	Title string     `json:"title"`
-// 	Steps []PlanStep `json:"steps"`
-// }
-
 // ExecutionPlan represents a pending execution plan
 type ExecutionPlan struct {
-	ID                string                 `json:"id"`
-	Title             string                 `json:"title"`
-	Description       string                 `json:"description"`
-	Steps             []string               `json:"steps"`
-	EstimatedDuration string                 `json:"estimated_duration"`
-	Parameters        map[string]interface{} `json:"parameters"`
-	CreatedAt         time.Time              `json:"created_at"`
-	ExpiresAt         time.Time              `json:"expires_at"`
+	ID                string             `json:"id"`
+	Title             string             `json:"title"`
+	Description       string             `json:"description"`
+	Steps             []string           `json:"steps"`
+	EstimatedDuration string             `json:"estimated_duration"`
+	Action            string             `json:"action"`
+	Parameters        map[string]*string `json:"parameters"`
+	CreatedAt         time.Time          `json:"created_at"`
+	ExpiresAt         time.Time          `json:"expires_at"`
+}
+
+// ExecutionPlanEvent represents an execution plan sent to the user
+type ExecutionPlanEvent struct {
+	UserID    string        `json:"user_id"`
+	SessionID string        `json:"session_id"`
+	Plan      ExecutionPlan `json:"plan"`
+	Timestamp time.Time     `json:"timestamp"`
+}
+
+// ExecuteCommand represents a command to execute a plan
+type ExecuteCommand struct {
+	UserID    string    `json:"user_id"`
+	SessionID string    `json:"session_id"`
+	PlanID    string    `json:"plan_id"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type PlanStep struct {

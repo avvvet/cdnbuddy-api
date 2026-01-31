@@ -187,3 +187,16 @@ func (s *Subscriber) RegisterRequestHandler(subject string, handler func(data []
 	log.Printf("📥 Request handler registered for subject: %s", subject)
 	return nil
 }
+
+// RegisterExecuteCommandHandler registers handler for execution commands
+func (s *Subscriber) RegisterExecuteCommandHandler(handler func(event ExecuteCommand) error) error {
+	messageHandler := func(data []byte) error {
+		var event ExecuteCommand
+		if err := json.Unmarshal(data, &event); err != nil {
+			return err
+		}
+		return handler(event)
+	}
+
+	return s.subscribe("cdnbuddy.execute", messageHandler)
+}
